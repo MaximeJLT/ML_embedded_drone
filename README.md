@@ -62,7 +62,7 @@ I assembled and wired the whole platform myself.
 
 The Jetson is mounted on the frame with an insulating layer underneath so the board never shorts against the metal frame. Because the Jetson is embedded on the aircraft, I have no terminal or SSH access to it during flight. Every configuration change is applied on the ground, and services are started at boot. That single constraint shaped a lot of the design decisions below.
 
-![Drone in flight over the test road](docs/media/flight_overview.jpg)
+![Drone in flight over the test road](docs/media/IMG_6950.jpeg)
 
 ---
 
