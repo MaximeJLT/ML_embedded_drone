@@ -150,7 +150,7 @@ I built a separate simulation harness that never touches the flight files. It sw
 
 Running the real approach in SITL, with the mailbox at its true position along the road, the pipeline behaves exactly as designed. The guard rejects the estimate while the mailbox is far, the drone keeps flying, and once inside the reliable distance the computed position lands about 3.5m from the true mailbox. For a forward camera with no depth sensor, that is a good result, and it is well within the safety margin I use for the hold point. The simulation also caught a re-triggering bug where the drone would loop on the same mailbox after the first hold, which I fixed with a one-shot flag before it could ever happen in the air.
 
-![Real test terrain](docs/media/real_terrain.jpg)
+![Real test terrain](docs/media/flight2.gif)
 
 ---
 
