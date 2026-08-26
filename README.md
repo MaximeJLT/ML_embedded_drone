@@ -60,7 +60,7 @@ I assembled and wired the whole platform myself.
 - Jetson Orin Nano Dev Kit, JetPack 6.2.1, CUDA 12.6
 - Two IMX219 CSI cameras. The forward camera (sensor-id 0) is tilted about 17 degrees below horizontal and does the detection. A second nadir camera (sensor-id 1) is mounted for future visual servoing during the hold and is not used in the current pipeline.
 
-The Jetson is mounted on the frame with an insulating layer underneath so the board never shorts against the metal frame. Because the Jetson is embedded on the aircraft, I have no terminal or SSH access to it during flight. Every configuration change is applied on the ground, and services are started at boot. That single constraint shaped a lot of the design decisions below.
+The Jetson is mounted on the frame with an insulating layer underneath so the board never shorts against the metal frame. I designed this platform with Autodesk Fusion. Because the Jetson is embedded on the aircraft, I have no terminal or SSH access to it during flight. Every configuration change is applied on the ground, and services are started at boot. That single constraint shaped a lot of the design decisions below.
 
 ![Drone in flight over the test road](docs/media/IMG_6950.jpeg)
 
