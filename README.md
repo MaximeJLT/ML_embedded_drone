@@ -4,7 +4,6 @@ I built an autonomous quadcopter that takes off, follows a road, detects a mailb
 
 I did this project solo over two months, starting from a bare F450 frame and a Jetson I had never flashed, and ending with a full detect-navigate-deliver-return loop validated in simulation and in the air.
 
-![Drone in flight over the test road](docs/media/flight_overview.jpg)
 <!-- TODO: I will add a wide shot / video still of the drone flying the road -->
 
 ---
@@ -62,6 +61,8 @@ I assembled and wired the whole platform myself.
 - Two IMX219 CSI cameras. The forward camera (sensor-id 0) is tilted about 17 degrees below horizontal and does the detection. A second nadir camera (sensor-id 1) is mounted for future visual servoing during the hold and is not used in the current pipeline.
 
 The Jetson is mounted on the frame with an insulating layer underneath so the board never shorts against the metal frame. Because the Jetson is embedded on the aircraft, I have no terminal or SSH access to it during flight. Every configuration change is applied on the ground, and services are started at boot. That single constraint shaped a lot of the design decisions below.
+
+![Drone in flight over the test road](docs/media/flight_overview.jpg)
 
 ---
 
