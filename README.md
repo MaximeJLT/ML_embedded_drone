@@ -5,7 +5,7 @@ I built an autonomous quadcopter that takes off, follows a road, detects a mailb
 I did this project solo over two months, starting from a bare F450 frame and a Jetson I had never flashed, and ending with a full detect-navigate-deliver-return loop validated in simulation and in the air.
 
 ![Drone in flight over the test road](docs/media/flight_overview.jpg)
-<!-- TODO: wide shot of the drone flying the road -->
+<!-- TODO: I will add a wide shot / video still of the drone flying the road -->
 
 ---
 
@@ -22,7 +22,6 @@ The mission is deliberately simple to state and hard to make reliable:
 7. Return to launch.
 
 ![Live detection on the forward camera](docs/media/live_detection.jpg)
-<!-- TODO: screenshot of a live mailbox detection with the confidence box -->
 
 ---
 
@@ -30,8 +29,7 @@ The mission is deliberately simple to state and hard to make reliable:
 
 The system splits cleanly into a pilot safety layer, the Jetson perception and decision stack, and the ArduCopter flight controller. I drew the full architecture on a board before writing any of the flight loop, and the code follows it closely.
 
-![System architecture](docs/media/architecture.jpg)
-<!-- TODO: the architecture board photo -->
+![System architecture](docs/media/architecture.svg)
 
 At a high level:
 
@@ -139,32 +137,43 @@ I do not test new flight logic on the real drone first. I test it in ArduCopter 
 
 I built a separate simulation harness that never touches the flight files. It swaps the real `NN` module for a fake one that computes where the real mailbox, placed at its true GPS coordinates, would fall in the forward camera image given the drone's live SITL position, heading, altitude, and the 17 degree camera tilt. The fake detector only reports the mailbox when it is actually inside the camera field of view. The rest of the chain, including the real `GPS_target` geometry, runs unmodified. That way the simulation tests the code I actually fly.
 
-![SITL simulation of the approach](docs/media/sitl_sim.jpg)
-<!-- TODO: screenshot of the SITL run / map with the approach -->
+![SITL simulation of the approach](docs/media/sitl_sim.png)
 
 Running the real approach in SITL, with the mailbox at its true position along the road, the pipeline behaves exactly as designed. The guard rejects the estimate while the mailbox is far, the drone keeps flying, and once inside the reliable distance the computed position lands about 3.5m from the true mailbox. For a forward camera with no depth sensor, that is a good result, and it is well within the safety margin I use for the hold point. The simulation also caught a re-triggering bug where the drone would loop on the same mailbox after the first hold, which I fixed with a one-shot flag before it could ever happen in the air.
 
 ![Real test terrain](docs/media/real_terrain.jpg)
-<!-- TODO: photo of the real road / mailbox setup -->
 
 ---
 
-## Model performance
+## Dataset and generalization
 
-I evaluate the detector on a held-out validation set of drone-viewpoint mailbox images and read the curves before trusting anything.
+I did not train on the mailbox I use for the flight test. I went out and photographed real mailboxes at several different locations, from the drone point of view, on different roads, in different lighting, and built the dataset from those. The mailbox at the V1 test site is one the model had never seen during training.
 
-![Confusion matrix](docs/media/confusion_matrix.png)
-<!-- TODO: confusion matrix -->
+![Dataset sample from a different location](docs/media/dataset_samples.jpg)
+
+That is the part I care about most: the detector generalized. It learned what a roadside mailbox looks like from the air, not what one specific box looks like, so it fires on the test-site mailbox even though that box was never in the training set. The validation grid below shows it picking out small, distant mailboxes along the road, in the exact conditions of the flight, while correctly leaving cars, poles, and buildings alone.
 
 ![Validation predictions](docs/media/val_predictions.jpg)
-<!-- TODO: val_batch predictions grid -->
 
-<!-- TODO: I will add here the analysis of the confusion matrix and the training curves,
-     explaining the precision/recall trade-off, the confidence threshold choice (0.6),
-     and why the model is strong on the flight-condition view (mailbox seen from the
-     drone, from a distance, along the road) and weaker on close-range off-domain views. -->
+## Model performance
 
-The confidence threshold of 0.6 is chosen to favor precision in flight. A false positive that moves the drone is worse than a missed frame, and the majority vote already recovers most real detections across frames.
+I read the curves before trusting the model in the air.
+
+![Confusion matrix](docs/media/confusion_matrix.png)
+
+The confusion matrix tells the story I want for a drone: 0.96 of true mailboxes are detected, and the 0.04 that are missed fall through as background. Nothing pushes a background patch out as a false mailbox at the operating point. The model would rather miss a frame than hallucinate a target, which is exactly the failure mode I want when a detection moves the aircraft.
+
+![Precision-Recall curve](docs/media/pr_curve.png)
+
+The precision-recall curve gives a mAP@0.5 of 0.979 for the mailbox class. The detector holds near-perfect precision across almost the entire recall range and only falls off at the very top of recall.
+
+![F1 curve](docs/media/f1_curve.png)
+![Precision curve](docs/media/p_curve.png)
+![Recall curve](docs/media/r_curve.png)
+
+The F1-confidence curve peaks at 0.96 around a confidence of 0.49, and the precision-confidence curve reaches 1.0 by about 0.75. The recall-confidence curve stays high, around 0.95, up to a confidence near 0.5, then drops past 0.6.
+
+I fly at a confidence threshold of 0.6, and I picked it from these curves rather than by feel. At 0.6 the precision is already very high, so a single-frame false positive is unlikely, and I trade a little raw recall for that safety. The recall I give up at the threshold is bought back by the majority vote: a real mailbox is visible across many frames, so even if some frames dip below 0.6, the rolling vote still confirms it. A false positive that would move the drone has to survive both a high per-frame threshold and the multi-frame vote, which almost never happens.
 
 ---
 
