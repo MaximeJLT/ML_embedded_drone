@@ -4,7 +4,7 @@ I built an autonomous quadcopter that takes off, follows a road, detects a mailb
 
 I did this project solo over two months, starting from a bare F450 frame and a Jetson I had never flashed, and ending with a full detect-navigate-deliver-return loop validated in simulation and in the air.
 
-![Drone in flight over the test road](docs/media/flight_overview.jpg)
+![Drone in flight over the test road](docs/media/IMG_6950.jpeg)
 <!-- TODO: I will add a wide shot / video still of the drone flying the road -->
 
 ---
