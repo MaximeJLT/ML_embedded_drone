@@ -21,7 +21,8 @@ The mission is deliberately simple to state and hard to make reliable:
 6. Fly to a hold point a few meters in front of the mailbox, hold to simulate a delivery, climb back up, and resume.
 7. Return to launch.
 
-![Live detection on the forward camera](docs/media/live_detection.jpg)
+<img width="2437" height="1864" alt="live_detection" src="https://github.com/user-attachments/assets/6e8e5fb2-315e-41f4-b769-9ef5aac5237a" />
+
 
 ---
 
