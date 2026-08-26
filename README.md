@@ -95,7 +95,15 @@ The flight is a three-state machine, and keeping it that small is intentional. F
 
 Two bugs I hit early are worth calling out because they are the kind that only show up in the air:
 
-**Reading detection state by value froze it forever.** Importing `latest_detection` directly captured a `None` at import time and never saw updates. The detection branch was permanently dead and the drone flew straight past everything. The fix is to always read through the module, `nn_module.latest_detection`, so the loop sees the live value the inference thread writes.
+**Reading detection state by value froze it forever.** Importing `latest_detection` directly captured a `None` at import time and never saw updates. The detection branch was permanently dead and the drone flew straight past everything. The fix is to always read through the module so the loop sees the live value the inference thread writes:
+
+```python
+det = nn_module.latest_detection
+if det is not None and not target_simulated:
+    state = State.TARGET_DETECTED
+```
+
+Reading `nn_module.latest_detection` on every tick gets the value the perception thread updates in the background, instead of a stale `None` frozen at import.
 
 **Reading one MAVLink message per tick froze the position.** The drone was physically moving but the FSM kept seeing the same stale distance to the waypoint, so it never advanced. The MAVLink buffer was filling faster than I drained it. The fix is to drain the entire buffer every tick with a non-blocking inner loop and keep only the most recent `GLOBAL_POSITION_INT`.
 
@@ -105,14 +113,47 @@ Two bugs I hit early are worth calling out because they are the kind that only s
 
 **Why two threads.** Camera capture and neural network inference run at different speeds. Capturing a frame off the CSI sensor is fast. Running YOLO on the GPU takes about 30ms. If I did both in one loop, the whole pipeline would run at the speed of the slowest step, and worse, the flight loop that reads the detection would stall every time inference ran. So capture runs in its own thread, inference runs in its own thread, and the main flight loop never blocks on either. The state machine reads the latest confirmed detection through a shared variable and keeps flying.
 
-**Threaded capture, latest-frame-only.** On the Jetson the CSI cameras go through Argus, and I capture with a GStreamer pipeline using `nvarguscamerasrc`, not `cv2.VideoCapture`. The reader thread pushes frames into a queue of size one: before putting a new frame in, it drops the old one. This matters. A camera producing frames faster than the model consumes them would build a backlog, and the model would end up processing stale frames that no longer match where the drone is. By keeping only the most recent frame, inference always works on what the drone sees right now, not on a queue of old images. Fresh data is more important than every frame.
+**Threaded capture, latest-frame-only.** On the Jetson the CSI cameras go through Argus, and I capture with a GStreamer pipeline using `nvarguscamerasrc`, not `cv2.VideoCapture`. The reader thread pushes frames into a short queue, and before putting a new frame in, it drops the old one:
+
+```python
+def _reader(self):
+    while self.running:
+        sample = self.appsink.emit("try-pull-sample", Gst.SECOND)
+        if sample is None:
+            continue
+        buf = sample.get_buffer()
+        caps = sample.get_caps().get_structure(0)
+        w = caps.get_value("width")
+        h = caps.get_value("height")
+        ok, mapinfo = buf.map(Gst.MapFlags.READ)
+        if not ok:
+            continue
+        frame = np.frombuffer(mapinfo.data, dtype=np.uint8).reshape((h, w, 3)).copy()
+        buf.unmap(mapinfo)
+        if not self.q.empty():
+            self.q.get_nowait()   # drop the stale frame
+        self.q.put(frame)         # keep only the newest
+```
+
+That `get_nowait` then `put` is the whole point. A camera producing frames faster than the model consumes them would build a backlog, and the model would end up processing stale frames that no longer match where the drone is. By keeping only the most recent frame, inference always works on what the drone sees right now. Fresh data is more important than every frame.
 
 **Threaded inference with tracking.** The inference thread pulls the latest frame, runs YOLO11n on the GPU at about 30ms per frame, and runs ByteTrack so detections carry an identity across frames rather than being independent one-shot guesses.
 
 **Three filters in cascade before the drone moves.** A raw detection never moves the aircraft on its own. It has to survive three independent checks:
 
 1. **Per-frame confidence.** A detection below 0.6 confidence is discarded outright. I chose 0.6 from the F1 and precision curves, in the region where precision is already very high.
-2. **Majority vote over time.** I keep a rolling buffer of the last seven frames. A detection only becomes "robust" and visible to the flight loop when a mailbox appears in at least 60 percent of that buffer. A single bright frame that happens to look like a mailbox cannot pass this. Flicker and one-off false positives die here.
+2. **Majority vote over time.** I keep a rolling buffer of the last seven frames and only promote a detection to the shared `latest_detection` when the same tracked target fills at least 60 percent of that buffer:
+
+   ```python
+   buffer_size = 7
+
+   if local_buffer.count(track_id) >= int(buffer_size * 0.6):
+       latest_detection = (x, y, w, h, track_id)
+   else:
+       latest_detection = None
+   ```
+
+   A single bright frame that happens to look like a mailbox cannot pass this. Flicker and one-off false positives die here.
 3. **Distance guard.** Even a robust detection is only acted on if the geometry says the target is close enough to be estimated reliably. A confirmed mailbox seen too far away is ignored until the drone is closer.
 
 The effect is that for the drone to divert toward a target, that target has to be confident, persistent across time, and geometrically close. That is three failure modes a false positive would have to beat at once, which is exactly the kind of layered safety I want when a detection commands a real aircraft.
@@ -125,18 +166,31 @@ The detector is trained on a custom dataset of real mailboxes shot from the dron
 
 This is the geometric heart of the project, and it is where a subtle error cost me a full flight.
 
-`ml/conversion.py` turns a normalized detection `(x, y)` into a world GPS coordinate. The camera looks forward, tilted about 17 degrees down. A detection's vertical position in the image becomes a depression angle below the horizon. Given the drone altitude above ground, the intersection of that ray with the ground gives the forward distance to the target:
+`ml/conversion.py` turns a normalized detection `(x, y)` into a world GPS coordinate. The camera looks forward, tilted about 17 degrees down. A detection's vertical position in the image becomes a depression angle below the horizon, and given the drone altitude above ground, the intersection of that ray with the ground gives the forward distance to the target:
 
-```
-depression = camera_tilt + vertical_angle_from_image
-forward_distance = altitude / tan(depression)
+```python
+cam_tilt_deg = 17.0
+angle_vertical = y_centré * fov_vertical
+
+depression_deg = cam_tilt_deg + angle_vertical
+depression_rad = math.radians(depression_deg)
+
+offset_forward_drone = altitude / math.tan(depression_rad)
 ```
 
 The lateral offset comes from the horizontal angle, and a yaw rotation puts the whole thing into North and East before converting to latitude and longitude.
 
 The key detail is the divide by `tan`, not multiply. A forward-looking camera is not a nadir camera. My first version used nadir geometry, `altitude * tan(angle)`, which is correct for a camera pointing straight down and completely wrong for one pointing forward. It placed the target almost underneath the drone instead of tens of meters ahead. Once I switched to the forward-camera ray-ground intersection, the estimate became physically sensible.
 
-Because a forward camera has no depth sensor, far targets are unreliable: near the horizon, a tiny angle error becomes a huge distance error, since `1/tan` blows up. So I guard the estimate. If the target is beyond a reliable distance, the function refuses to return a position and the drone simply keeps flying and re-estimates when it is closer. A LiDAR would remove this limitation, but I do not have one, so the guard is the honest engineering answer.
+Because a forward camera has no depth sensor, far targets are unreliable: near the horizon, a tiny angle error becomes a huge distance error, since `1/tan` blows up. So I guard the estimate. If the target is beyond a reliable distance, the function refuses to return a position and the drone simply keeps flying and re-estimates when it is closer:
+
+```python
+if offset_forward_drone > RELIABLE_DISTANCE:
+    print(f"[GPS_target] target too far ({offset_forward_drone:.1f}m), keep going forward")
+    return None, None
+```
+
+A LiDAR would remove this limitation, but I do not have one, so the guard is the honest engineering answer.
 
 ---
 
