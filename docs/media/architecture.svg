@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 720" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 z" fill="#334155"/>
+    </marker>
+    <marker id="arrowlight" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L8,3 L0,6 z" fill="#64748b"/>
+    </marker>
+    <style>
+      .title  { font-size: 26px; font-weight: 700; fill: #0f172a; }
+      .zone    { font-size: 13px; font-weight: 700; fill: #64748b; letter-spacing: 1px; }
+      .box     { fill: #ffffff; stroke: #334155; stroke-width: 2; rx: 10; }
+      .boxlabel{ font-size: 16px; font-weight: 700; fill: #0f172a; }
+      .boxsub  { font-size: 12px; fill: #475569; }
+      .jetson  { fill: #eef2ff; stroke: #4f46e5; stroke-width: 2.5; }
+      .fc      { fill: #ecfdf5; stroke: #059669; stroke-width: 2.5; }
+      .pilot   { fill: #fef2f2; stroke: #dc2626; stroke-width: 2.5; }
+      .road    { fill: #fffbeb; stroke: #d97706; stroke-width: 2.5; }
+      .edge    { stroke: #334155; stroke-width: 2; fill: none; }
+      .edgelight{ stroke: #64748b; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+      .edgelabel{ font-size: 12px; fill: #475569; font-weight: 600; }
+      .zonebox { fill: none; stroke-width: 1.5; stroke-dasharray: 6 5; rx: 14; }
+    </style>
+  </defs>
+
+  <text x="40" y="48" class="title">Autonomous Delivery Drone — System Architecture</text>
+
+  <!-- ===================== PILOT ZONE ===================== -->
+  <rect x="40" y="80" width="250" height="180" class="zonebox" stroke="#dc2626"/>
+  <text x="52" y="104" class="zone">SAFETY LAYER</text>
+  <rect x="60" y="120" width="210" height="70" class="box pilot"/>
+  <text x="80" y="150" class="boxlabel">Pilot + Radio</text>
+  <text x="80" y="172" class="boxsub">manual killswitch, mode switch</text>
+  <text x="80" y="230" class="boxsub" font-style="italic" fill="#dc2626">Autonomy holds only</text>
+  <text x="80" y="248" class="boxsub" font-style="italic" fill="#dc2626">while vehicle is in GUIDED</text>
+
+  <!-- ===================== JETSON ZONE ===================== -->
+  <rect x="320" y="80" width="530" height="300" class="zonebox" stroke="#4f46e5"/>
+  <text x="332" y="104" class="zone">JETSON ORIN NANO  (companion computer)</text>
+
+  <!-- forward camera -->
+  <rect x="340" y="120" width="150" height="64" class="box jetson"/>
+  <text x="360" y="147" class="boxlabel">Forward cam</text>
+  <text x="360" y="167" class="boxsub">IMX219, tilt ~17 deg</text>
+
+  <!-- capture -->
+  <rect x="520" y="120" width="150" height="64" class="box jetson"/>
+  <text x="540" y="147" class="boxlabel">Capture</text>
+  <text x="540" y="167" class="boxsub">GStreamer, threaded</text>
+
+  <!-- perception -->
+  <rect x="700" y="120" width="130" height="64" class="box jetson"/>
+  <text x="716" y="147" class="boxlabel">Perception</text>
+  <text x="716" y="167" class="boxsub">YOLO11n, GPU</text>
+
+  <!-- majority vote -->
+  <rect x="520" y="220" width="150" height="60" class="box jetson"/>
+  <text x="540" y="245" class="boxlabel">Majority vote</text>
+  <text x="540" y="264" class="boxsub">7-frame stability</text>
+
+  <!-- GPS target -->
+  <rect x="700" y="220" width="130" height="60" class="box jetson"/>
+  <text x="716" y="245" class="boxlabel">GPS target</text>
+  <text x="716" y="264" class="boxsub">pixel to world</text>
+
+  <!-- FSM -->
+  <rect x="430" y="315" width="330" height="52" class="box jetson"/>
+  <text x="450" y="340" class="boxlabel">Finite State Machine  (controller_fsm)</text>
+  <text x="450" y="358" class="boxsub">FOLLOW_LINE  ->  TARGET_DETECTED  ->  RETURN_HOME</text>
+
+  <!-- ===================== FLIGHT CONTROL ZONE ===================== -->
+  <rect x="880" y="80" width="240" height="300" class="zonebox" stroke="#059669"/>
+  <text x="892" y="104" class="zone">FLIGHT CONTROL</text>
+
+  <rect x="900" y="120" width="200" height="120" class="box fc"/>
+  <text x="920" y="147" class="boxlabel">Command layer</text>
+  <text x="920" y="170" class="boxsub">goto (GUIDED setpoints)</text>
+  <text x="920" y="190" class="boxsub">velocity (NED)</text>
+  <text x="920" y="210" class="boxsub">yaw</text>
+  <text x="920" y="230" class="boxsub">arm / takeoff / mode</text>
+
+  <rect x="900" y="270" width="200" height="90" class="box fc"/>
+  <text x="920" y="297" class="boxlabel">ArduCopter</text>
+  <text x="920" y="318" class="boxsub">Pixhawk 2.4.8, V3.6.12</text>
+  <text x="920" y="338" class="boxsub">stabilize, position hold</text>
+
+  <!-- ===================== EDGES ===================== -->
+  <!-- camera -> capture -> perception -->
+  <path d="M490,152 L516,152" class="edge" marker-end="url(#arrow)"/>
+  <path d="M670,152 L696,152" class="edge" marker-end="url(#arrow)"/>
+  <!-- perception -> vote -->
+  <path d="M765,184 L765,205 L620,205 L620,216" class="edge" marker-end="url(#arrow)"/>
+  <!-- vote -> gps target -->
+  <path d="M670,250 L696,250" class="edge" marker-end="url(#arrow)"/>
+  <!-- vote -> fsm -->
+  <path d="M595,280 L595,311" class="edge" marker-end="url(#arrow)"/>
+  <!-- gps target -> fsm -->
+  <path d="M765,280 L765,300 L640,300 L640,311" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- FSM -> command layer (MAVLink) -->
+  <path d="M760,341 L998,341 L998,242" class="edge" marker-end="url(#arrow)"/>
+  <text x="812" y="333" class="edgelabel">MAVLink (pymavlink)</text>
+
+  <!-- command layer -> arducopter -->
+  <path d="M1000,240 L1000,268" class="edge" marker-end="url(#arrow)"/>
+
+  <!-- arducopter -> fsm feedback (position/attitude) -->
+  <path d="M900,315 L800,315" class="edgelight" marker-end="url(#arrowlight)"/>
+  <text x="792" y="308" class="edgelabel" fill="#64748b" text-anchor="end">position + attitude feedback</text>
+
+  <!-- pilot killswitch -> arducopter (mode) -->
+  <path d="M270,175 L300,175 L300,420 L1000,420 L1000,362" class="edge" stroke="#dc2626" marker-end="url(#arrow)"/>
+  <text x="470" y="413" class="edgelabel" fill="#dc2626">killswitch: switch out of GUIDED takes control back instantly</text>
+
+  <!-- ===================== ROADMAP ===================== -->
+  <rect x="40" y="470" width="1080" height="210" class="zonebox" stroke="#d97706"/>
+  <text x="52" y="494" class="zone">ROADMAP  (phase 2)</text>
+
+  <rect x="60" y="512" width="250" height="120" class="box road"/>
+  <text x="80" y="539" class="boxlabel">Active road following</text>
+  <text x="80" y="562" class="boxsub">nadir camera, self-correcting</text>
+  <text x="80" y="582" class="boxsub">path instead of a fixed line</text>
+
+  <rect x="340" y="512" width="270" height="120" class="box road"/>
+  <text x="360" y="539" class="boxlabel">Square-up positioning</text>
+  <text x="360" y="562" class="boxsub">face the mailbox front / slot</text>
+  <text x="360" y="582" class="boxsub">needs orientation, not just</text>
+  <text x="360" y="602" class="boxsub">position</text>
+
+  <rect x="640" y="512" width="300" height="120" class="box road"/>
+  <text x="660" y="539" class="boxlabel">RL approach policy</text>
+  <text x="660" y="562" class="boxsub">learned approach + hold</text>
+  <text x="660" y="582" class="boxsub">trained in sim, sim-to-real</text>
+  <text x="660" y="602" class="boxsub">transfer via the same harness</text>
+
+  <text x="965" y="560" class="boxsub" font-style="italic" fill="#d97706">The SITL harness</text>
+  <text x="965" y="578" class="boxsub" font-style="italic" fill="#d97706">used for V1 is the</text>
+  <text x="965" y="596" class="boxsub" font-style="italic" fill="#d97706">training ground for</text>
+  <text x="965" y="614" class="boxsub" font-style="italic" fill="#d97706">the RL policy.</text>
+</svg>
