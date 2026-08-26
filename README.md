@@ -4,7 +4,7 @@ I built an autonomous quadcopter that takes off, follows a road, detects a mailb
 
 I did this project solo over two months, starting from a bare F450 frame and a Jetson I had never flashed, and ending with a full detect-navigate-deliver-return loop validated in simulation and in the air.
 
-![Drone in flight over the test road](docs/media/IMG_6950.jpeg)
+![Drone in flight over the test road](docs/media/flight_overview.jpg)
 <!-- TODO: I will add a wide shot / video still of the drone flying the road -->
 
 ---
@@ -21,8 +21,7 @@ The mission is deliberately simple to state and hard to make reliable:
 6. Fly to a hold point a few meters in front of the mailbox, hold to simulate a delivery, climb back up, and resume.
 7. Return to launch.
 
-<img width="2437" height="1864" alt="live_detection" src="https://github.com/user-attachments/assets/6e8e5fb2-315e-41f4-b769-9ef5aac5237a" />
-
+![Live detection on the forward camera](docs/media/live_detection.jpg)
 
 ---
 
@@ -101,15 +100,23 @@ Two bugs I hit early are worth calling out because they are the kind that only s
 
 ### Perception pipeline
 
-`ml/NN.py` is built around two threads and a temporal filter.
+`ml/NN.py` is built around two threads and a temporal filter, and the threading is not decoration. It exists to keep the flight loop safe and responsive.
 
-**Threaded capture.** On the Jetson the CSI cameras go through Argus, and I capture with a GStreamer pipeline using `nvarguscamerasrc`, not `cv2.VideoCapture`. A reader thread keeps a queue of the single most recent frame, so inference always works on fresh data and never falls behind.
+**Why two threads.** Camera capture and neural network inference run at different speeds. Capturing a frame off the CSI sensor is fast. Running YOLO on the GPU takes about 30ms. If I did both in one loop, the whole pipeline would run at the speed of the slowest step, and worse, the flight loop that reads the detection would stall every time inference ran. So capture runs in its own thread, inference runs in its own thread, and the main flight loop never blocks on either. The state machine reads the latest confirmed detection through a shared variable and keeps flying.
 
-**Threaded inference.** A YOLO11n model runs on the GPU at about 30ms per frame. I run tracking with ByteTrack so detections carry an identity across frames.
+**Threaded capture, latest-frame-only.** On the Jetson the CSI cameras go through Argus, and I capture with a GStreamer pipeline using `nvarguscamerasrc`, not `cv2.VideoCapture`. The reader thread pushes frames into a queue of size one: before putting a new frame in, it drops the old one. This matters. A camera producing frames faster than the model consumes them would build a backlog, and the model would end up processing stale frames that no longer match where the drone is. By keeping only the most recent frame, inference always works on what the drone sees right now, not on a queue of old images. Fresh data is more important than every frame.
 
-**Majority vote.** A raw single-frame detection is not enough to change the flight state. I keep a rolling buffer of the last several frames and only mark a detection as robust when it appears in at least 60 percent of them. This kills flicker and false single-frame hits before they can move the drone.
+**Threaded inference with tracking.** The inference thread pulls the latest frame, runs YOLO11n on the GPU at about 30ms per frame, and runs ByteTrack so detections carry an identity across frames rather than being independent one-shot guesses.
 
-**Onboard recording.** During flight, the annotated forward camera feed is written to disk as an MKV. This gives me a recording of exactly what the model saw, which is the difference between guessing why a flight failed and knowing.
+**Three filters in cascade before the drone moves.** A raw detection never moves the aircraft on its own. It has to survive three independent checks:
+
+1. **Per-frame confidence.** A detection below 0.6 confidence is discarded outright. I chose 0.6 from the F1 and precision curves, in the region where precision is already very high.
+2. **Majority vote over time.** I keep a rolling buffer of the last seven frames. A detection only becomes "robust" and visible to the flight loop when a mailbox appears in at least 60 percent of that buffer. A single bright frame that happens to look like a mailbox cannot pass this. Flicker and one-off false positives die here.
+3. **Distance guard.** Even a robust detection is only acted on if the geometry says the target is close enough to be estimated reliably. A confirmed mailbox seen too far away is ignored until the drone is closer.
+
+The effect is that for the drone to divert toward a target, that target has to be confident, persistent across time, and geometrically close. That is three failure modes a false positive would have to beat at once, which is exactly the kind of layered safety I want when a detection commands a real aircraft.
+
+**Onboard recording.** During flight, the annotated forward camera feed is written to disk as an MKV. This gives me a recording of exactly what the model saw, which is the difference between guessing why a flight behaved a certain way and knowing.
 
 The detector is trained on a custom dataset of real mailboxes shot from the drone point of view, not on ArUco markers or a public set. Training is a plain YOLO11n fine-tune, 60 epochs, 640px, batch 16, on an RTX GPU. I train on a desktop, push to GitHub, and pull on the Jetson. Git is the deployment pipeline.
 
